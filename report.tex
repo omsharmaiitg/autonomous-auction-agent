@@ -1,0 +1,267 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[a4paper, margin=2.5cm]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{tcolorbox}
+\usepackage{multirow}
+
+\definecolor{darkblue}{HTML}{0f3460}
+\definecolor{accent}{HTML}{e94560}
+\definecolor{lightgray}{HTML}{f4f4f4}
+\definecolor{codebg}{HTML}{1e1e1e}
+\definecolor{codegreen}{HTML}{6aff6a}
+\definecolor{codeyellow}{HTML}{ffd700}
+
+\titleformat{\section}{\Large\bfseries\color{darkblue}}{§\thesection}{1em}{}[\color{accent}\rule{\linewidth}{1pt}]
+\titleformat{\subsection}{\large\bfseries\color{darkblue}}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{1em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\textcolor{darkblue}{\small Om Sharma $|$ Coding Club Recruitment}}
+\lhead{\textcolor{accent}{\small Automated Bidding Model}}
+\rfoot{\thepage}
+
+\lstset{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small\color{white},
+  keywordstyle=\color{codeyellow}\bfseries,
+  stringstyle=\color{codegreen},
+  commentstyle=\color{gray}\itshape,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{darkblue},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  tabsize=4,
+  language=Python
+}
+
+\tcbuselibrary{skins,breakable}
+\newtcolorbox{definitionbox}[1][]{colback=lightgray,colframe=darkblue,fonttitle=\bfseries\color{white},coltitle=white,colbacktitle=darkblue,title=#1,sharp corners,breakable}
+\newtcolorbox{formulabox}[1][]{colback=darkblue!5,colframe=accent,fonttitle=\bfseries,title=#1,sharp corners,breakable}
+
+\hypersetup{colorlinks=true,linkcolor=darkblue,urlcolor=accent}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering\vspace*{3cm}
+  {\Huge\bfseries\color{darkblue}Automated Bidding Model\\[0.4em]
+   \large\color{accent}for Used Car Auctions\par}
+  \vspace{1cm}\rule{\linewidth}{1pt}\vspace{0.5cm}
+  {\large Coding Club Recruitment $|$ Complete Technical Reference\par}
+  \vspace{0.5cm}{\large\textbf{Om Sharma}\par}\vspace{2cm}
+  \begin{tabular}{ll}\toprule
+    \textbf{Model} & XGBoost Regressor (Tuned)\\
+    \textbf{Features} & 15 (7 numeric + 8 encoded)\\
+    \textbf{Target} & $\log(1+\text{sellingprice})$\\
+    \textbf{Val RMSE} & \$1,620\\
+    \textbf{Starting Bankroll} & \$500,000\\
+    \textbf{Bid Strategy} & Sigmoid-Proportional Sequence\\\bottomrule
+  \end{tabular}\vfill
+\end{titlepage}
+
+\tableofcontents\newpage
+
+%% ─────────────────────────────────────────────
+\section{Statistical Foundations}
+
+\subsection{Skewness}
+\begin{formulabox}[Formula: Skewness]
+\[\text{Skewness}=\frac{\frac{1}{n}\sum_{i=1}^{n}(x_i-\bar{x})^3}{\sigma^3}\]
+\end{formulabox}
+\begin{itemize}
+  \item $=0$: Symmetric $\rightarrow$ use \textbf{mean}
+  \item $>0$: Right skew (long right tail, e.g.\ selling price) $\rightarrow$ use \textbf{median}
+  \item $<0$: Left skew $\rightarrow$ use \textbf{median}
+\end{itemize}
+
+\subsection{Kurtosis}
+\begin{formulabox}[Formula: Excess Kurtosis]
+\[\text{Kurtosis}=\frac{\frac{1}{n}\sum_{i=1}^{n}(x_i-\bar{x})^4}{\sigma^4}-3\]
+\end{formulabox}
+$>0$: Heavy tails, more outliers. Our selling price had high kurtosis $\Rightarrow$ justified IQR removal and log-transform.
+
+\subsection{IQR Outlier Removal}
+\begin{formulabox}[IQR Rule]
+\[\text{IQR}=Q_3-Q_1,\quad\text{bounds}=\bigl[Q_1-1.5\cdot\text{IQR},\;Q_3+1.5\cdot\text{IQR}\bigr]\]
+\end{formulabox}
+
+%% ─────────────────────────────────────────────
+\section{Missing Values and Imputation}
+
+\begin{definitionbox}[Imputation]
+Replacing missing values with substitutes instead of deleting rows.
+\end{definitionbox}
+
+\subsection{Types of Missing Data}
+\begin{enumerate}
+  \item \textbf{MCAR} — Missing Completely At Random. Random failure. Safe to drop or impute.
+  \item \textbf{MAR} — Missing At Random. Depends on other observed columns. Group-wise imputation.
+  \item \textbf{MNAR} — Missing Not At Random. Depends on the missing value itself. Most dangerous.
+\end{enumerate}
+
+\subsection{Mean vs.\ Median}
+\begin{center}
+\begin{tabular}{lll}\toprule
+  Distribution & Skewness & Use\\\midrule
+  Symmetric & $|\text{skew}|<0.5$ & \textbf{Mean}\\
+  Mildly skewed & $0.5$--$1.0$ & \textbf{Median}\\
+  Highly skewed / outliers & $>1.0$ & \textbf{Median}\\\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Strategy Used}
+\begin{longtable}{llp{8cm}}\toprule
+  Column & Method & Justification\\\midrule\endhead
+  \texttt{condition} & Median & Right-skewed\\
+  \texttt{odometer} & Median & Extreme right skew\\
+  \texttt{color, interior} & Mode & Categorical; mode is only sensible central measure\\
+  \texttt{trim, body, transmission} & ``unknown'' token & High cardinality; mode would mislead\\
+  \texttt{make, model, state} & Row dropped & Structurally critical\\\bottomrule
+\end{longtable}
+
+%% ─────────────────────────────────────────────
+\section{Feature Engineering}
+
+\begin{longtable}{lp{4cm}p{7cm}}\toprule
+  Feature & Formula & Justification\\\midrule\endhead
+  \texttt{age\_years} & $2016-\texttt{year}$ & Age more meaningful than raw year\\
+  \texttt{usage\_intensity} & $\texttt{odo}/\texttt{age}$ & Best single predictor (41\% R$^2$)\\
+  \texttt{odo\_per\_condition} & $\texttt{odo}/\texttt{cond}$ & Wear-adjusted mileage\\
+  \texttt{cond\_x\_year} & $\texttt{cond}\times\texttt{year}$ & Interaction: quality $\times$ age\\\bottomrule
+\end{longtable}
+
+\subsection{Label Encoding}
+Converts categorical strings to integers. Fitted on training set, saved to \texttt{.pkl}.
+Unseen values at inference $\rightarrow$ bucket 0 (no \texttt{KeyError}).
+
+%% ─────────────────────────────────────────────
+\section{Machine Learning Models}
+
+\subsection{Decision Tree}
+\begin{formulabox}[Splitting Criterion: MSE Reduction]
+\[\text{Gain}=\text{MSE}(S)-\Bigl(\frac{|S_L|}{|S|}\text{MSE}(S_L)+\frac{|S_R|}{|S|}\text{MSE}(S_R)\Bigr)\]
+\end{formulabox}
+\textbf{Cons:} High variance, overfitting, greedy splits, unstable.
+
+\subsection{Random Forest}
+\begin{formulabox}[Prediction]
+\[\hat{y}=\frac{1}{B}\sum_{b=1}^{B}T_b(\mathbf{x})\]
+\end{formulabox}
+Fixes decision tree via bootstrap aggregation (bagging) + random feature subsampling at each split.
+
+\subsection{XGBoost}
+Sequential boosting: each tree corrects residuals of previous trees.
+\begin{formulabox}[Objective]
+\[\mathcal{L}^{(t)}=\sum_i\ell\!\left(y_i,\hat{y}_i^{(t-1)}+f_t(\mathbf{x}_i)\right)+\gamma T+\tfrac{1}{2}\lambda\sum_j w_j^2\]
+\end{formulabox}
+Target transform: $y=\log_e(1+\text{price})$, invert: $\text{price}=e^{\hat{y}}-1$ (\texttt{np.expm1}).
+
+%% ─────────────────────────────────────────────
+\section{Hyperparameter Tuning}
+
+\subsection{Grid Search vs.\ Randomized Search vs.\ Optuna}
+\begin{center}
+\begin{tabular}{llll}\toprule
+  & Grid Search & Randomized Search & Optuna (TPE)\\\midrule
+  Strategy & Exhaustive & Random sampling & Bayesian\\
+  Speed & Very slow & Fast & Fast + smart\\
+  Used here & No & \textbf{Yes (50 iter, 3-fold)} & No\\\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Best Parameters Found}
+\begin{center}
+\begin{tabular}{lll}\toprule
+  Parameter & Best Value & Effect\\\midrule
+  \texttt{n\_estimators} & 700 & More trees = better fit\\
+  \texttt{max\_depth} & 6 & Controls overfitting\\
+  \texttt{learning\_rate} & 0.048 & Slower = more accurate\\
+  \texttt{subsample} & 0.82 & Row sampling\\
+  \texttt{colsample\_bytree} & 0.76 & Feature sampling\\
+  \texttt{reg\_alpha} & 0.31 & L1 regularisation\\
+  \texttt{reg\_lambda} & 1.40 & L2 regularisation\\\bottomrule
+\end{tabular}
+\end{center}
+\textbf{Result:} \$1,890 (default) $\rightarrow$ \$1,620 (tuned) — \textbf{14.3\% improvement}.
+
+%% ─────────────────────────────────────────────
+\section{Regularisation, Bias-Variance, Loss Functions}
+
+\subsection{Regularisation}
+\begin{formulabox}[L1 (Lasso) and L2 (Ridge)]
+\[\text{L1: }\mathcal{L}+\lambda\sum|w_i|\qquad\text{L2: }\mathcal{L}+\lambda\sum w_i^2\]
+\end{formulabox}
+L1 drives weights to exactly zero (feature selection). L2 shrinks all weights (handles multicollinearity).
+\textbf{Geometric reason:} L1 diamond shape has corners on axes $\Rightarrow$ loss contours touch corners $\Rightarrow$ zero weights. L2 circle has no corners $\Rightarrow$ weights only shrink.
+
+\subsection{Bias-Variance Tradeoff}
+\[\text{Total Error}=\text{Bias}^2+\text{Variance}+\text{Irreducible Noise}\]
+\begin{itemize}
+  \item High Bias = underfitting (model too simple)
+  \item High Variance = overfitting (model too complex)
+\end{itemize}
+
+\subsection{Loss Functions}
+\begin{formulabox}[MSE (Linear Regression) and Cross-Entropy (Logistic)]
+\[\text{MSE}=\frac{1}{n}\sum(y_i-\hat{y}_i)^2\]
+\[\text{BCE}=-\frac{1}{n}\sum\bigl[y_i\log\hat{p}_i+(1-y_i)\log(1-\hat{p}_i)\bigr]\]
+\end{formulabox}
+
+%% ─────────────────────────────────────────────
+\section{Neural Networks and CNN}
+
+\subsection{Neural Network}
+Each neuron: $z=\mathbf{w}^\top\mathbf{x}+b$, output $=f(z)$ (activation).
+Training via backpropagation + gradient descent: $w\leftarrow w-\eta\frac{\partial\mathcal{L}}{\partial w}$.
+
+\textbf{Vanishing gradient (Sigmoid problem):} $\sigma'(z)_{\max}=0.25$. Deep networks: $0.25^{10}\approx10^{-6}$. \textbf{Fix:} ReLU $=\max(0,z)$.
+
+\subsection{CNN}
+For images. Convolutional filters slide over image detecting local patterns (edges $\rightarrow$ shapes $\rightarrow$ objects). Shares weights $\Rightarrow$ far fewer parameters than dense NN.
+
+%% ─────────────────────────────────────────────
+\section{The Live Bidding Agent}
+
+\subsection{Complete Bid Sequence Formula}
+\begin{formulabox}[All Steps]
+\begin{align*}
+  V_{\text{adj}}&=\hat{p}\times0.95\\
+  \sigma(r)&=\frac{1}{1+e^{-0.35(r-5)}}\\
+  C(B)&=\begin{cases}0.88&B\geq0.6B_0\\0.70\text{--}0.80&0.3\leq B/B_0<0.6\\0.70&B<0.3B_0\end{cases}\\
+  \text{max\_bid}&=\min\!\bigl(V_{\text{adj}}\cdot C(B)(1+0.1\sigma(r)),\;V_{\text{adj}},\;B\bigr)\\
+  \text{next\_bid}&=\text{cur}+\max\!\bigl((0.40+0.50\,\sigma(r))\cdot\text{gap},\;\$50\bigr)
+\end{align*}
+If $\text{cur}\geq\text{max\_bid}$: \textbf{fold} (return 0.0).
+\end{formulabox}
+
+\subsection{Key Design Decisions}
+\begin{itemize}
+  \item \textbf{Hard cap at $V_{\text{adj}}$:} Profit guaranteed on every win
+  \item \textbf{Proportional increment:} Conceals ceiling from rivals; closes faster in late rounds
+  \item \textbf{Bankroll tiers:} Higher margin required as money depletes
+  \item \textbf{Sigmoid:} Patient early, aggressive late — mimics expert bidder behaviour
+  \item \textbf{Fold freely:} Win = positive profit only (confirmed rule); folding is never penalised
+\end{itemize}
+
+%% ─────────────────────────────────────────────
+\section{Evaluation Metrics}
+\begin{formulabox}[RMSE and MAPE]
+\[\text{RMSE}=\sqrt{\frac{1}{n}\sum(y_i-\hat{y}_i)^2}\qquad\text{MAPE}=\frac{1}{n}\sum\left|\frac{y_i-\hat{y}_i}{y_i}\right|\times100\%\]
+\end{formulabox}
+
+\vfill\begin{center}\rule{0.5\linewidth}{0.4pt}\\[0.3em]
+{\small Om Sharma $|$ Coding Club Recruitment}\end{center}
+
+\end{document}
